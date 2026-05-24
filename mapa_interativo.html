@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mapa Interativo de Pontos</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg: #0d0f14;
+    --panel: #13161e;
+    --border: #1f2433;
+    --accent: #00e5ff;
+    --accent2: #7c3aed;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --panel-w: 320px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* ── SIDEBAR ── */
+  #sidebar {
+    width: var(--panel-w);
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    z-index: 1000;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+
+  #sidebar-header {
+    padding: 20px 20px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  #sidebar-header h1 {
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+
+  #sidebar-header p {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+  }
+
+  #sidebar-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  #sidebar-body::-webkit-scrollbar { width: 4px; }
+  #sidebar-body::-webkit-scrollbar-track { background: transparent; }
+  #sidebar-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .section-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  /* Upload */
+  #upload-zone {
+    border: 1.5px dashed var(--border);
+    border-radius: 10px;
+    padding: 20px 12px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    background: rgba(0,229,255,0.02);
+  }
+  #upload-zone:hover, #upload-zone.drag-over {
+    border-color: var(--accent);
+    background: rgba(0,229,255,0.06);
+  }
+  #upload-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+  #upload-zone .upload-icon { font-size: 28px; margin-bottom: 6px; }
+  #upload-zone .upload-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 3px;
+  }
+  #upload-zone .upload-sub { font-size: 11px; color: var(--muted); }
+  #file-name {
+    font-size: 11px;
+    color: var(--accent);
+    margin-top: 6px;
+    font-family: 'Space Mono', monospace;
+    word-break: break-all;
+  }
+
+  /* Stats */
+  #stats-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .stat-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .stat-card .s-val {
+    font-family: 'Space Mono', monospace;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--accent);
+    line-height: 1;
+  }
+  .stat-card .s-lbl {
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 3px;
+    letter-spacing: 0.06em;
+  }
+
+  /* Resolution Filter */
+  .res-grid {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .res-btn {
+    background: var(--bg);
+    border: 1.5px solid var(--border);
+    border-radius: 6px;
+    color: var(--muted);
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    padding: 5px 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    user-select: none;
+  }
+  .res-btn:hover { border-color: var(--accent); color: var(--text); }
+  .res-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #000;
+    font-weight: 700;
+  }
+
+  /* Legend */
+  .legend-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 7px;
+    border-radius: 6px;
+    background: var(--bg);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .legend-item:hover { border-color: var(--border); }
+  .legend-item.inactive { opacity: 0.35; }
+  .legend-dot {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 5px currentColor;
+  }
+  .legend-txt {
+    font-size: 10px;
+    color: var(--text);
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Sidebar footer */
+  #sidebar-footer {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+  }
+
+  /* MAP */
+  #map-container {
+    flex: 1;
+    position: relative;
+  }
+
+  #map {
+    width: 100%;
+    height: 100%;
+    background: #090b0f;
+  }
+
+  /* map top-right badge */
+  #map-badge {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 999;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  #map-badge span { color: var(--accent); font-weight: 700; }
+
+  /* empty state overlay */
+  #empty-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 500;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(13,15,20,0.82);
+    backdrop-filter: blur(4px);
+    pointer-events: none;
+    transition: opacity 0.3s;
+  }
+  #empty-overlay.hidden { opacity: 0; pointer-events: none; }
+  #empty-overlay .eo-icon { font-size: 48px; margin-bottom: 12px; opacity: 0.4; }
+  #empty-overlay .eo-title {
+    font-family: 'Space Mono', monospace;
+    font-size: 14px;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+  }
+  #empty-overlay .eo-sub { font-size: 12px; color: var(--muted); opacity: 0.6; margin-top: 4px; }
+
+  /* Leaflet overrides */
+  .leaflet-tile-pane { filter: brightness(0.85) saturate(0.6) hue-rotate(200deg); }
+  .leaflet-control-zoom {
+    border: 1px solid var(--border) !important;
+    border-radius: 8px !important;
+    overflow: hidden;
+  }
+  .leaflet-control-zoom a {
+    background: var(--panel) !important;
+    color: var(--text) !important;
+    border-bottom: 1px solid var(--border) !important;
+  }
+  .leaflet-control-zoom a:hover { background: var(--border) !important; }
+  .leaflet-control-attribution { display: none !important; }
+
+  .leaflet-popup-content-wrapper {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    font-family: 'DM Sans', sans-serif;
+  }
+  .leaflet-popup-tip { background: var(--panel); }
+  .leaflet-popup-content { margin: 12px 16px; font-size: 12px; }
+  .popup-row { display: flex; gap: 8px; align-items: center; margin: 3px 0; }
+  .popup-key { color: var(--muted); font-family: 'Space Mono', monospace; font-size: 10px; min-width: 70px; }
+  .popup-val { color: var(--text); font-weight: 500; }
+  .popup-color-dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; display: inline-block; }
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<div id="sidebar">
+  <div id="sidebar-header">
+    <h1>⬡ MapViewer</h1>
+    <p>Visualização geoespacial de pontos</p>
+  </div>
+
+  <div id="sidebar-body">
+
+    <!-- Upload -->
+    <div>
+      <div class="section-label">Carregar Dados</div>
+      <div id="upload-zone">
+        <input type="file" id="csv-input" accept=".csv"/>
+        <div class="upload-icon">📂</div>
+        <div class="upload-title">Solte o CSV aqui</div>
+        <div class="upload-sub">ou clique para selecionar</div>
+        <div id="file-name"></div>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div id="stats-section" style="display:none">
+      <div class="section-label">Resumo</div>
+      <div id="stats-row">
+        <div class="stat-card"><div class="s-val" id="s-total">0</div><div class="s-lbl">Total de Pontos</div></div>
+        <div class="stat-card"><div class="s-val" id="s-visible">0</div><div class="s-lbl">Visíveis</div></div>
+        <div class="stat-card"><div class="s-val" id="s-res">—</div><div class="s-lbl">Resoluções</div></div>
+        <div class="stat-card"><div class="s-val" id="s-colors">—</div><div class="s-lbl">Cores Únicas</div></div>
+      </div>
+    </div>
+
+    <!-- Resolution Filter -->
+    <div id="res-section" style="display:none">
+      <div class="section-label">Filtro de Resolução</div>
+      <div class="res-grid" id="res-btns"></div>
+    </div>
+
+    <!-- Legend -->
+    <div id="legend-section" style="display:none">
+      <div class="section-label">Legenda de Cores</div>
+      <div class="legend-grid" id="legend-grid"></div>
+    </div>
+
+  </div>
+
+  <div id="sidebar-footer">lat · lng · resolução · cor</div>
+</div>
+
+<!-- MAP AREA -->
+<div id="map-container">
+  <div id="map"></div>
+
+  <div id="map-badge">Pontos visíveis: <span id="badge-count">—</span></div>
+
+  <div id="empty-overlay">
+    <div class="eo-icon">🗺️</div>
+    <div class="eo-title">Nenhum dado carregado</div>
+    <div class="eo-sub">Importe um CSV para começar</div>
+  </div>
+</div>
+
+<script>
+// ── COLOR PALETTE (1–15) ──
+const COLOR_MAP = {
+   1: { hex: '#ef4444', name: 'Vermelho' },
+   2: { hex: '#f97316', name: 'Laranja' },
+   3: { hex: '#eab308', name: 'Amarelo' },
+   4: { hex: '#84cc16', name: 'Verde-Lima' },
+   5: { hex: '#22c55e', name: 'Verde' },
+   6: { hex: '#06b6d4', name: 'Ciano' },
+   7: { hex: '#3b82f6', name: 'Azul' },
+   8: { hex: '#6366f1', name: 'Índigo' },
+   9: { hex: '#a855f7', name: 'Violeta' },
+  10: { hex: '#ec4899', name: 'Rosa' },
+  11: { hex: '#f43f5e', name: 'Rosa-Vermelho' },
+  12: { hex: '#14b8a6', name: 'Teal' },
+  13: { hex: '#f59e0b', name: 'Âmbar' },
+  14: { hex: '#8b5cf6', name: 'Púrpura' },
+  15: { hex: '#ffffff', name: 'Branco' },
+};
+
+// ── STATE ──
+let allData = [];
+let activeRes = new Set([0,1,2,3,4,5]);
+let activeColors = new Set([1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]);
+let markerLayer = null;
+
+// ── MAP INIT ──
+const map = L.map('map', { zoomControl: true }).setView([-15, -52], 4);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+}).addTo(map);
+markerLayer = L.layerGroup().addTo(map);
+
+// ── UPLOAD ──
+const csvInput = document.getElementById('csv-input');
+const uploadZone = document.getElementById('upload-zone');
+
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) processFile(file);
+});
+
+csvInput.addEventListener('change', e => {
+  if (e.target.files[0]) processFile(e.target.files[0]);
+});
+
+function processFile(file) {
+  document.getElementById('file-name').textContent = file.name;
+  Papa.parse(file, {
+    header: true,
+    skipEmptyLines: true,
+    dynamicTyping: true,
+    complete: result => {
+      const rows = result.data.filter(r =>
+        r.lat != null && r.lng != null &&
+        !isNaN(r.lat) && !isNaN(r.lng)
+      );
+      allData = rows;
+      buildUI();
+      renderMarkers();
+    }
+  });
+}
+
+// ── BUILD RESOLUTION BUTTONS ──
+function buildUI() {
+  const resSet = new Set(allData.map(r => Number(r.resolucao)).filter(v => !isNaN(v)));
+  activeRes = new Set(resSet);
+
+  const colorSet = new Set(allData.map(r => Number(r.cor)).filter(v => !isNaN(v)));
+  activeColors = new Set(colorSet);
+
+  // Resolution buttons
+  const container = document.getElementById('res-btns');
+  container.innerHTML = '';
+
+  // "Todos" button
+  const allBtn = document.createElement('button');
+  allBtn.className = 'res-btn active';
+  allBtn.textContent = 'Todos';
+  allBtn.dataset.all = true;
+  allBtn.addEventListener('click', () => {
+    activeRes = new Set(resSet);
+    document.querySelectorAll('.res-btn').forEach(b => b.classList.add('active'));
+    renderMarkers();
+  });
+  container.appendChild(allBtn);
+
+  [...resSet].sort((a,b)=>a-b).forEach(r => {
+    const btn = document.createElement('button');
+    btn.className = 'res-btn active';
+    btn.textContent = r;
+    btn.dataset.res = r;
+    btn.addEventListener('click', () => {
+      if (activeRes.has(r)) {
+        activeRes.delete(r);
+        btn.classList.remove('active');
+      } else {
+        activeRes.add(r);
+        btn.classList.add('active');
+      }
+      // sync "Todos"
+      const allB = container.querySelector('[data-all]');
+      allB.classList.toggle('active', activeRes.size === resSet.size);
+      renderMarkers();
+    });
+    container.appendChild(btn);
+  });
+
+  // Legend
+  const legend = document.getElementById('legend-grid');
+  legend.innerHTML = '';
+  [...colorSet].sort((a,b)=>a-b).forEach(c => {
+    const col = COLOR_MAP[c] || { hex: '#888', name: `Cor ${c}` };
+    const item = document.createElement('div');
+    item.className = 'legend-item';
+    item.dataset.color = c;
+    item.innerHTML = `
+      <div class="legend-dot" style="background:${col.hex};color:${col.hex}"></div>
+      <div class="legend-txt">${c} · ${col.name}</div>
+    `;
+    item.addEventListener('click', () => {
+      if (activeColors.has(c)) {
+        activeColors.delete(c);
+        item.classList.add('inactive');
+      } else {
+        activeColors.add(c);
+        item.classList.remove('inactive');
+      }
+      renderMarkers();
+    });
+    legend.appendChild(item);
+  });
+
+  // Stats
+  document.getElementById('s-total').textContent = allData.length.toLocaleString('pt-BR');
+  document.getElementById('s-res').textContent = resSet.size;
+  document.getElementById('s-colors').textContent = colorSet.size;
+
+  // Show sections
+  ['stats-section','res-section','legend-section'].forEach(id => {
+    document.getElementById(id).style.display = 'block';
+  });
+
+  document.getElementById('empty-overlay').classList.add('hidden');
+}
+
+// ── RENDER MARKERS ──
+function renderMarkers() {
+  markerLayer.clearLayers();
+
+  const filtered = allData.filter(r => {
+    const res = Number(r.resolucao);
+    const cor = Number(r.cor);
+    return activeRes.has(res) && activeColors.has(cor);
+  });
+
+  filtered.forEach(r => {
+    const cor = Number(r.cor);
+    const res = Number(r.resolucao);
+    const colDef = COLOR_MAP[cor] || { hex: '#888', name: `Cor ${cor}` };
+    const radius = 3 + res * 1.5; // bigger dot = higher resolution
+
+    const circle = L.circleMarker([r.lat, r.lng], {
+      radius,
+      fillColor: colDef.hex,
+      color: colDef.hex,
+      weight: 1.5,
+      opacity: 0.9,
+      fillOpacity: 0.75,
+    });
+
+    circle.bindPopup(`
+      <div class="popup-row"><span class="popup-key">Latitude</span><span class="popup-val">${r.lat}</span></div>
+      <div class="popup-row"><span class="popup-key">Longitude</span><span class="popup-val">${r.lng}</span></div>
+      <div class="popup-row"><span class="popup-key">Resolução</span><span class="popup-val">${res}</span></div>
+      <div class="popup-row">
+        <span class="popup-key">Cor</span>
+        <span class="popup-val">
+          <span class="popup-color-dot" style="background:${colDef.hex}"></span>
+          ${cor} · ${colDef.name}
+        </span>
+      </div>
+    `, { maxWidth: 220 });
+
+    markerLayer.addLayer(circle);
+  });
+
+  const count = filtered.length;
+  document.getElementById('s-visible').textContent = count.toLocaleString('pt-BR');
+  document.getElementById('badge-count').textContent = count.toLocaleString('pt-BR');
+
+  // Fit bounds
+  if (filtered.length > 0) {
+    const lats = filtered.map(r => r.lat);
+    const lngs = filtered.map(r => r.lng);
+    map.fitBounds([
+      [Math.min(...lats), Math.min(...lngs)],
+      [Math.max(...lats), Math.max(...lngs)],
+    ], { padding: [40, 40] });
+  }
+}
+</script>
+</body>
+</html>
